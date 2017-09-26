@@ -25,8 +25,6 @@ def init(redis)
       redis.flushdb
       redis.select 15
       redis.flushdb
-    else
-      redis.flushall
     end
     redis
   rescue Redis::CannotConnectError
