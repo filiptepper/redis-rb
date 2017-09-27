@@ -5,8 +5,8 @@ BUILD_DIR     := ${TMP}/redis-${REDIS_BRANCH}
 TARBALL       := ${TMP}/redis-${REDIS_BRANCH}.tar.gz
 BINARY        := ${BUILD_DIR}/src/redis-server
 REDIS_TRIB    := ${BUILD_DIR}/src/redis-trib.rb
-PID_PATH      := ${BUILD_DIR}/redis.pid
-SOCKET_PATH   := ${BUILD_DIR}/redis.sock
+PID_PATH      := ${TMP}/redis.pid
+SOCKET_PATH   := ${TMP}/redis.sock
 PORT          := 6381
 CLUSTER_PORTS := 7000 7001 7002 7003 7004 7005
 
@@ -42,20 +42,20 @@ start: ${BINARY}
 
 stop_cluster: ${BINARY}
 	for port in ${CLUSTER_PORTS}; do \
-		(test -f ${BUILD_DIR}/redis$$port.pid && (kill $$(cat ${BUILD_DIR}/redis$$port.pid) || true) && rm -f ${BUILD_DIR}/redis$$port.pid) || true; \
+		(test -f ${TMP}/redis$$port.pid && (kill $$(cat ${TMP}/redis$$port.pid) || true) && rm -f ${TMP}/redis$$port.pid) || true; \
 	done
 
 start_cluster: ${BINARY}
-	for port in ${CLUSTER_PORTS}; do                          \
-		${BINARY}                                               \
-			--daemonize            yes                            \
-			--appendonly           yes                            \
-			--cluster-enabled      yes                            \
-			--cluster-config-file  ${TMP}/nodes$$port.conf        \
-			--cluster-node-timeout 5000                           \
-			--pidfile              ${BUILD_DIR}/redis$$port.pid   \
-			--port                 $$port                         \
-			--unixsocket           ${BUILD_DIR}/redis$$port.sock; \
+	for port in ${CLUSTER_PORTS}; do                    \
+		${BINARY}                                         \
+			--daemonize            yes                      \
+			--appendonly           yes                      \
+			--cluster-enabled      yes                      \
+			--cluster-config-file  ${TMP}/nodes$$port.conf  \
+			--cluster-node-timeout 5000                     \
+			--pidfile              ${TMP}/redis$$port.pid   \
+			--port                 $$port                   \
+			--unixsocket           ${TMP}/redis$$port.sock; \
 	done
 	yes yes | bundle exec ruby ${REDIS_TRIB} create \
 		--replicas 1                                  \
@@ -68,5 +68,9 @@ start_cluster: ${BINARY}
 
 clean:
 	(test -d ${BUILD_DIR} && cd ${BUILD_DIR}/src && make clean distclean) || true
+	rm appendonly.aof
+	for port in ${CLUSTER_PORTS}; do \
+		rm ${TMP}/nodes$$port.conf; \
+	done
 
 .PHONY: test start stop start_cluster stop_cluster
