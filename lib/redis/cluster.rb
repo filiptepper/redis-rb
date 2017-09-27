@@ -6,6 +6,7 @@ class Redis
   class Cluster
     def initialize(node_configs, options = {})
       @slot_node_maps = {}
+      raise ArgumentError, 'Redis Cluster node config must be Array' unless node_configs.is_a?(Array)
       @cluster = node_configs.map do |config|
         option = to_client_option(config)
         [to_node_key(option), Redis.new(options.merge(option))]
@@ -32,7 +33,7 @@ class Redis
       elsif config.is_a?(Hash)
         { host: config.fetch(:host), port: config.fetch(:port) }
       else
-        raise ArgumentError, 'Redis Cluster node config must be String or Hash'
+        raise ArgumentError, 'Redis Cluster node config must includes String or Hash'
       end
     end
 

@@ -68,9 +68,9 @@ start_cluster: ${BINARY}
 
 clean:
 	(test -d ${BUILD_DIR} && cd ${BUILD_DIR}/src && make clean distclean) || true
-	rm appendonly.aof
+	(test -f appendonly.aof && rm appendonly.aof) || true
 	for port in ${CLUSTER_PORTS}; do \
-		rm ${TMP}/nodes$$port.conf; \
+		(test -f ${TMP}/nodes$$port.conf && rm ${TMP}/nodes$$port.conf) || true; \
 	done
 
 .PHONY: test start stop start_cluster stop_cluster
