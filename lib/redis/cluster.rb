@@ -9,7 +9,7 @@ class Redis
   # TODO: CLUSTER commands support
   class Cluster
     def initialize(node_configs, options = {})
-      @slot_node_maps = {}
+      @slot_node_key_maps = {}
       raise ArgumentError, 'Redis Cluster node config must be Array' unless node_configs.is_a?(Array)
       @nodes = node_configs.map do |config|
         option = to_client_option(config)
@@ -57,8 +57,8 @@ class Redis
     end
 
     def select_node(slot)
-      if @slot_node_maps.key?(slot)
-        node_key = @slot_node_maps[slot]
+      if @slot_node_key_maps.key?(slot)
+        node_key = @slot_node_key_maps[slot]
         @nodes.fetch(node_key)
       else
         nodes = @nodes.values
@@ -79,9 +79,9 @@ class Redis
     end
 
     def destination_node(err_msg)
-      _, slot, host_port = err_msg.split(' ')
-      @slot_node_maps[slot.to_i] = host_port
-      @nodes.fetch(host_port)
+      _, slot, node_key = err_msg.split(' ')
+      @slot_node_key_maps[slot.to_i] = node_key
+      @nodes.fetch(node_key)
     end
   end
 end
