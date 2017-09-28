@@ -11,7 +11,7 @@ class Redis
     def initialize(node_configs, options = {})
       @slot_node_maps = {}
       raise ArgumentError, 'Redis Cluster node config must be Array' unless node_configs.is_a?(Array)
-      @cluster = node_configs.map do |config|
+      @nodes = node_configs.map do |config|
         option = to_client_option(config)
         [to_node_key(option), Redis.new(options.merge(option))]
       end.to_h
@@ -20,7 +20,7 @@ class Redis
     private
 
     def respond_to_missing?(method_name, _include_private = false)
-      @cluster.values.first.respond_to?(method_name)
+      @nodes.values.first.respond_to?(method_name)
     end
 
     def method_missing(method_name, *args)
@@ -59,9 +59,9 @@ class Redis
     def select_node(slot)
       if @slot_node_maps.key?(slot)
         node_key = @slot_node_maps[slot]
-        @cluster.fetch(node_key)
+        @nodes.fetch(node_key)
       else
-        nodes = @cluster.values
+        nodes = @nodes.values
         nodes[rand(nodes.length - 1)]
       end
     end
@@ -81,7 +81,7 @@ class Redis
     def destination_node(err_msg)
       _, slot, host_port = err_msg.split(' ')
       @slot_node_maps[slot.to_i] = host_port
-      @cluster.fetch(host_port)
+      @nodes.fetch(host_port)
     end
   end
 end
