@@ -19,6 +19,28 @@ class TestCluster < Test::Unit::TestCase
     assert_equal 'string', @r.type('1')
   end
 
+  def test_client_respond_to_commands
+    nodes = (7000..7005).map { |port| "redis://127.0.0.1:#{port}" }
+
+    @r = Redis::Cluster.new(nodes)
+
+    assert_equal true, @r.respond_to?(:set)
+    assert_equal true, @r.respond_to?('set')
+    assert_equal true, @r.respond_to?(:get)
+    assert_equal true, @r.respond_to?('get')
+    assert_equal false, @r.respond_to?(:unknown_method)
+  end
+
+  def test_unknown_command_does_not_work
+    nodes = (7000..7005).map { |port| "redis://127.0.0.1:#{port}" }
+
+    @r = Redis::Cluster.new(nodes)
+
+    assert_raise(NoMethodError) do
+      @r.not_yet_implemented_command('boo', 'foo')
+    end
+  end
+
   def test_client_does_not_accept_db_specified_url
     nodes = ['redis://127.0.0.1:7000/1/namespace']
 
@@ -108,21 +130,6 @@ class TestCluster < Test::Unit::TestCase
 
     assert_raise(ArgumentError, 'Redis Cluster node config must be Array') do
       @r = Redis::Cluster.new(nodes)
-    end
-  end
-
-  def test_unknown_command_does_not_work
-    nodes = ['redis://127.0.0.1:7000',
-             'redis://127.0.0.1:7001',
-             'redis://127.0.0.1:7002',
-             'redis://127.0.0.1:7003',
-             'redis://127.0.0.1:7004',
-             'redis://127.0.0.1:7005']
-
-    @r = Redis::Cluster.new(nodes)
-
-    assert_raise(NoMethodError) do
-      @r.not_yet_implemented_command('boo', 'foo')
     end
   end
 end
