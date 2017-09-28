@@ -40,9 +40,9 @@ class Redis
 
       HASH_SLOTS = 16_384
 
-      def self.convert(bytes)
+      def self.convert(key)
         crc = 0
-        bytes.each_byte do |b|
+        key.each_byte do |b|
           crc = ((crc << 8) & 0xffff) ^ XMODEM_CRC16_LOOKUP[((crc >> 8) ^ b) & 0xff]
         end
 
