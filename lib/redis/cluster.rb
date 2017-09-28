@@ -3,6 +3,10 @@ require_relative 'cluster/key_slot_converter'
 class Redis
   # Copyright (C) 2013 Salvatore Sanfilippo <antirez@gmail.com>
   # https://github.com/antirez/redis-rb-cluster
+  # TODO: Failover consideration
+  # TODO: M* commands consideration
+  # TODO: Asking consideration
+  # TODO: CLUSTER commands support
   class Cluster
     def initialize(node_configs, options = {})
       @slot_node_maps = {}
@@ -31,6 +35,7 @@ class Redis
       if config.is_a?(String)
         { url: config }
       elsif config.is_a?(Hash)
+        config = config.map { |k, v| [k.to_sym, v] }.to_h
         { host: config.fetch(:host), port: config.fetch(:port) }
       else
         raise ArgumentError, 'Redis Cluster node config must includes String or Hash'
@@ -39,7 +44,7 @@ class Redis
 
     def to_node_key(option)
       if option.key?(:url)
-        option[:url].gsub('redis://', '')
+        option[:url].gsub(%r{rediss?://}, '')
       else
         "#{option[:host]}:#{option[:port]}"
       end
