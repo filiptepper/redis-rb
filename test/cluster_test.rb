@@ -16,7 +16,7 @@ class TestCluster < Test::Unit::TestCase
 
     100.times { |i| @r.set(i.to_s, "hogehoge#{i}") }
     100.times { |i| assert_equal "hogehoge#{i}", @r.get(i.to_s) }
-    assert_equal 'string', @r.type('1')
+    assert_equal '1', @r.info['cluster_enabled']
   end
 
   def test_client_respond_to_commands
