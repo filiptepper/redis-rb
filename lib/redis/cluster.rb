@@ -51,7 +51,17 @@ class Redis
 
     def extract_key(args)
       key = args.first.to_s
-      key.start_with?('{') && key.end_with?('}') ? key[1..-2] : key
+      hash_tag = extract_hash_tag(key)
+      hash_tag.empty? ? key : hash_tag
+    end
+
+    def extract_hash_tag(key)
+      s = key.index('{')
+      e = key.index('}', s.to_i + 1)
+
+      return '' if s.nil? || e.nil?
+
+      key[s + 1..e - 1]
     end
 
     def select_node(slot)

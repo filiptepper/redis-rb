@@ -4,6 +4,18 @@ require_relative 'helper'
 class TestCluster < Test::Unit::TestCase
   include Helper::Cluster
 
+  def test_extract_hash_tag
+    nodes = (7000..7005).map { |port| "redis://127.0.0.1:#{port}" }
+
+    @r = Redis::Cluster.new(nodes)
+
+    assert_equal 'user1000', @r.send(:extract_hash_tag, '{user1000}.following')
+    assert_equal 'user1000', @r.send(:extract_hash_tag, '{user1000}.followers')
+    assert_equal '', @r.send(:extract_hash_tag, 'foo{}{bar}')
+    assert_equal '{bar', @r.send(:extract_hash_tag, 'foo{{bar}}zap')
+    assert_equal 'bar', @r.send(:extract_hash_tag, 'foo{bar}{zap}')
+  end
+
   def test_well_known_commands_work
     nodes = ['redis://127.0.0.1:7000',
              'redis://127.0.0.1:7001',
