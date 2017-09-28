@@ -9,8 +9,9 @@ class Redis
   # TODO: CLUSTER commands support
   class Cluster
     def initialize(node_configs, options = {})
-      @slot_node_key_maps = {}
       raise ArgumentError, 'Redis Cluster node config must be Array' unless node_configs.is_a?(Array)
+
+      @slot_node_key_maps = {}
       @nodes = node_configs.map do |config|
         option = to_client_option(config)
         [to_node_key(option), Redis.new(options.merge(option))]
@@ -43,27 +44,21 @@ class Redis
     end
 
     def to_node_key(option)
-      if option.key?(:url)
-        option[:url].gsub(%r{rediss?://}, '')
-      else
-        "#{option[:host]}:#{option[:port]}"
-      end
+      return option[:url].gsub(%r{rediss?://}, '') if option.key?(:url)
+
+      "#{option[:host]}:#{option[:port]}"
     end
 
     def extract_key(args)
       key = args.first.to_s
-      return key[1..-2] if key.start_with?('{') && key.end_with?('}')
-      key
+      key.start_with?('{') && key.end_with?('}') ? key[1..-2] : key
     end
 
     def select_node(slot)
-      if @slot_node_key_maps.key?(slot)
-        node_key = @slot_node_key_maps[slot]
-        @nodes.fetch(node_key)
-      else
-        nodes = @nodes.values
-        nodes[rand(nodes.length - 1)]
-      end
+      return @nodes.values.sample unless @slot_node_key_maps.key?(slot)
+
+      node_key = @slot_node_key_maps[slot]
+      @nodes.fetch(node_key)
     end
 
     def try_cmd(node, command, *args)
