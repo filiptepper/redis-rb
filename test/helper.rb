@@ -205,12 +205,8 @@ module Helper
   module Cluster
     include Generic
 
-    NODES = ['redis://127.0.0.1:7000',
-             'redis://127.0.0.1:7001',
-             { host: '127.0.0.1', port: '7002' },
-             { host: '127.0.0.1', port: 7003 },
-             'redis://127.0.0.1:7004',
-             'redis://127.0.0.1:7005'].freeze
+    PORTS = (7000..7005).freeze
+    NODES = PORTS.map { |port| "redis://127.0.0.1:#{port}" }.freeze
 
     def version
       Version.new(redis.info['redis_version'])
