@@ -85,6 +85,14 @@ class TestCluster < Test::Unit::TestCase
     assert_equal '3', redis.cluster('info').fetch(:cluster_size)
   end
 
+  def test_asking
+    nodes = (7000..7005).map { |port| "redis://127.0.0.1:#{port}" }
+
+    redis = Redis::Cluster.new(nodes)
+
+    assert_equal 'OK', redis.asking
+  end
+
   def test_well_known_commands_work
     nodes = ['redis://127.0.0.1:7000',
              'redis://127.0.0.1:7001',
@@ -109,6 +117,8 @@ class TestCluster < Test::Unit::TestCase
     assert_equal true, redis.respond_to?('set')
     assert_equal true, redis.respond_to?(:get)
     assert_equal true, redis.respond_to?('get')
+    assert_equal true, redis.respond_to?(:cluster)
+    assert_equal true, redis.respond_to?(:asking)
     assert_equal false, redis.respond_to?(:unknown_method)
   end
 

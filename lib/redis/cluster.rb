@@ -3,9 +3,10 @@ require_relative 'cluster/key_slot_converter'
 class Redis
   # Copyright (C) 2013 Salvatore Sanfilippo <antirez@gmail.com>
   # https://github.com/antirez/redis-rb-cluster
-  # TODO: Failover consideration
-  # TODO: Asking consideration
   class Cluster
+    REQUEST_TTL = 5
+    REQUEST_RETRY_SLEEP = 0.1
+
     def initialize(node_configs, options = {})
       raise ArgumentError, 'Redis Cluster node config must be Array' unless node_configs.is_a?(Array)
 
@@ -20,7 +21,7 @@ class Redis
     end
 
     def cluster(command, *args)
-      response = find_node.cluster(command, *args)
+      response = try_cmd(find_node, :cluster, command, *args)
       case command.to_s.downcase
       when 'slots' then cluster_slots(response)
       when 'nodes' then cluster_nodes(response)
@@ -30,17 +31,21 @@ class Redis
       end
     end
 
-    private
-
-    def respond_to_missing?(method_name, _include_private = false)
-      find_node.respond_to?(method_name)
+    def asking
+      try_cmd(find_node, :synchronize) { |client| client.call(%i[asking]) }
     end
 
-    def method_missing(method_name, *args)
+    private
+
+    def respond_to_missing?(method_name, include_private = false)
+      find_node.respond_to?(method_name, include_private)
+    end
+
+    def method_missing(method_name, *args, &block)
       key = extract_key(args)
       slot = KeySlotConverter.convert(key)
       node = find_node(slot)
-      return try_cmd(node, method_name, *args) if node.respond_to?(method_name)
+      return try_cmd(node, method_name, *args, &block) if node.respond_to?(method_name)
       super
     end
 
@@ -51,11 +56,23 @@ class Redis
       @available_nodes.fetch(node_key)
     end
 
-    def try_cmd(node, command, *args)
-      node.send(command, *args)
+    def try_cmd(node, command, *args, ttl: REQUEST_TTL, &block)
+      ttl -= 1
+      node.send(command, *args, &block)
+    rescue TimeoutError, CannotConnectError, Errno::ECONNREFUSED, Errno::EACCES => err
+      raise err if ttl <= 0
+      sleep(REQUEST_RETRY_SLEEP)
+      retry
     rescue CommandError => err
-      raise err unless err.message.start_with?('MOVED')
-      redirection_node(err.message).send(command, *args)
+      if err.message.start_with?('MOVED')
+        redirection_node(err.message).send(command, *args)
+      elsif err.message.start_with?('ASK')
+        raise err if ttl <= 0
+        asking
+        retry
+      else
+        raise err
+      end
     end
 
     def redirection_node(err_msg)
@@ -105,7 +122,7 @@ class Redis
     end
 
     def fetch_slot_info(node)
-      node.cluster('slots').map do |slot_info|
+      try_cmd(node, :cluster, :slots).map do |slot_info|
         first_slot, last_slot = slot_info[0..1]
         ip, port = slot_info[2]
         ["#{ip}:#{port}", (first_slot..last_slot)]
