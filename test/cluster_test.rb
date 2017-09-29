@@ -69,7 +69,12 @@ class TestCluster < Test::Unit::TestCase
     redis = Redis::Cluster.new(nodes)
 
     sample_master_node_id = redis.cluster('nodes').find { |n| n.fetch(:master_node_id) == '-' }.fetch(:node_id)
+    sample_slave_node_id = redis.cluster('nodes').find { |n| n.fetch(:master_node_id) != '-' }.fetch(:node_id)
+
     assert_equal 'slave', redis.cluster('slaves', sample_master_node_id).first.fetch(:flags).first
+    assert_raise(Redis::CommandError, 'ERR The specified node is not a master') do
+      redis.cluster('slaves', sample_slave_node_id)
+    end
   end
 
   def test_cluster_info
