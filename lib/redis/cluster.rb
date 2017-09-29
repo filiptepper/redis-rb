@@ -4,7 +4,7 @@ class Redis
   # Copyright (C) 2013 Salvatore Sanfilippo <antirez@gmail.com>
   # https://github.com/antirez/redis-rb-cluster
   class Cluster
-    REQUEST_TTL = 5
+    REQUEST_TTL = 16
     REQUEST_RETRY_SLEEP = 0.1
 
     def initialize(node_configs, options = {})
@@ -50,6 +50,7 @@ class Redis
     end
 
     def find_node(slot = nil)
+      return nil unless instance_variable_defined?(:@available_nodes)
       return @available_nodes.values.sample if slot.nil? || !@slot_node_key_maps.key?(slot)
 
       node_key = @slot_node_key_maps[slot]
@@ -62,6 +63,7 @@ class Redis
     rescue TimeoutError, CannotConnectError, Errno::ECONNREFUSED, Errno::EACCES => err
       raise err if ttl <= 0
       sleep(REQUEST_RETRY_SLEEP)
+      node = find_node || node
       retry
     rescue CommandError => err
       if err.message.start_with?('MOVED')
