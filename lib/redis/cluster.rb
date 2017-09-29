@@ -67,7 +67,7 @@ class Redis
       retry
     rescue CommandError => err
       if err.message.start_with?('MOVED')
-        redirection_node(err.message).send(command, *args)
+        redirection_node(err.message).send(command, *args, &block)
       elsif err.message.start_with?('ASK')
         raise err if ttl <= 0
         asking
