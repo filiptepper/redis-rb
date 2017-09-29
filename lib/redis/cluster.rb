@@ -152,7 +152,7 @@ class Redis
       key[s + 1..e - 1]
     end
 
-    def convert_serialized_node_info_into_hash(str)
+    def deserialize_node_info(str)
       arr = str.split(' ')
       {
         node_id: arr[0],
@@ -179,11 +179,11 @@ class Redis
     def cluster_nodes(response)
       response
         .split(/[\r\n]+/)
-        .map { |node_info| convert_serialized_node_info_into_hash(node_info) }
+        .map { |str| deserialize_node_info(str) }
     end
 
     def cluster_slaves(response)
-      response.map { |node_info| convert_serialized_node_info_into_hash(node_info) }
+      response.map { |str| deserialize_node_info(str) }
     end
 
     def cluster_info(response)
