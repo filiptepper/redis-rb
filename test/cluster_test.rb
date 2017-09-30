@@ -20,19 +20,20 @@ class TestCluster < Test::Unit::TestCase
     nodes = (7000..7005).map { |port| "redis://127.0.0.1:#{port}" }
 
     redis = Redis::Cluster.new(nodes)
+    slots = redis.cluster('slots')
 
-    assert_equal 3, redis.cluster('slots').length
-    assert_equal true, redis.cluster('slots').first.key?(:start_slot)
-    assert_equal true, redis.cluster('slots').first.key?(:end_slot)
-    assert_equal true, redis.cluster('slots').first.key?(:master)
-    assert_equal true, redis.cluster('slots').first.fetch(:master).key?(:ip)
-    assert_equal true, redis.cluster('slots').first.fetch(:master).key?(:port)
-    assert_equal true, redis.cluster('slots').first.fetch(:master).key?(:node_id)
-    assert_equal true, redis.cluster('slots').first.key?(:replicas)
-    assert_equal true, redis.cluster('slots').first.fetch(:replicas).is_a?(Array)
-    assert_equal true, redis.cluster('slots').first.fetch(:replicas).first.key?(:ip)
-    assert_equal true, redis.cluster('slots').first.fetch(:replicas).first.key?(:port)
-    assert_equal true, redis.cluster('slots').first.fetch(:replicas).first.key?(:node_id)
+    assert_equal 3, slots.length
+    assert_equal true, slots.first.key?(:start_slot)
+    assert_equal true, slots.first.key?(:end_slot)
+    assert_equal true, slots.first.key?(:master)
+    assert_equal true, slots.first.fetch(:master).key?(:ip)
+    assert_equal true, slots.first.fetch(:master).key?(:port)
+    assert_equal true, slots.first.fetch(:master).key?(:node_id)
+    assert_equal true, slots.first.key?(:replicas)
+    assert_equal true, slots.first.fetch(:replicas).is_a?(Array)
+    assert_equal true, slots.first.fetch(:replicas).first.key?(:ip)
+    assert_equal true, slots.first.fetch(:replicas).first.key?(:port)
+    assert_equal true, slots.first.fetch(:replicas).first.key?(:node_id)
   end
 
   def test_cluster_keyslot
@@ -50,26 +51,28 @@ class TestCluster < Test::Unit::TestCase
     nodes = (7000..7005).map { |port| "redis://127.0.0.1:#{port}" }
 
     redis = Redis::Cluster.new(nodes)
+    cluster_nodes = redis.cluster('nodes')
 
-    assert_equal 6, redis.cluster('nodes').length
-    assert_equal true, redis.cluster('nodes').first.key?(:node_id)
-    assert_equal true, redis.cluster('nodes').first.key?(:ip_port)
-    assert_equal true, redis.cluster('nodes').first.key?(:flags)
-    assert_equal true, redis.cluster('nodes').first.key?(:master_node_id)
-    assert_equal true, redis.cluster('nodes').first.key?(:ping_sent)
-    assert_equal true, redis.cluster('nodes').first.key?(:pong_recv)
-    assert_equal true, redis.cluster('nodes').first.key?(:config_epoch)
-    assert_equal true, redis.cluster('nodes').first.key?(:link_state)
-    assert_equal true, redis.cluster('nodes').first.key?(:slots)
+    assert_equal 6, cluster_nodes.length
+    assert_equal true, cluster_nodes.first.key?(:node_id)
+    assert_equal true, cluster_nodes.first.key?(:ip_port)
+    assert_equal true, cluster_nodes.first.key?(:flags)
+    assert_equal true, cluster_nodes.first.key?(:master_node_id)
+    assert_equal true, cluster_nodes.first.key?(:ping_sent)
+    assert_equal true, cluster_nodes.first.key?(:pong_recv)
+    assert_equal true, cluster_nodes.first.key?(:config_epoch)
+    assert_equal true, cluster_nodes.first.key?(:link_state)
+    assert_equal true, cluster_nodes.first.key?(:slots)
   end
 
   def test_cluster_slaves
     nodes = (7000..7005).map { |port| "redis://127.0.0.1:#{port}" }
 
     redis = Redis::Cluster.new(nodes)
+    cluster_nodes = redis.cluster('nodes')
 
-    sample_master_node_id = redis.cluster('nodes').find { |n| n.fetch(:master_node_id) == '-' }.fetch(:node_id)
-    sample_slave_node_id = redis.cluster('nodes').find { |n| n.fetch(:master_node_id) != '-' }.fetch(:node_id)
+    sample_master_node_id = cluster_nodes.find { |n| n.fetch(:master_node_id) == '-' }.fetch(:node_id)
+    sample_slave_node_id = cluster_nodes.find { |n| n.fetch(:master_node_id) != '-' }.fetch(:node_id)
 
     assert_equal 'slave', redis.cluster('slaves', sample_master_node_id).first.fetch(:flags).first
     assert_raise(Redis::CommandError, 'ERR The specified node is not a master') do
@@ -91,6 +94,15 @@ class TestCluster < Test::Unit::TestCase
     redis = Redis::Cluster.new(nodes)
 
     assert_equal 'OK', redis.asking
+  end
+
+  def test_client_works_even_if_so_many_dead_nodes_existed
+    nodes = (6001..7005).map { |port| "redis://127.0.0.1:#{port}" }
+
+    assert_nothing_raised do
+      redis = Redis::Cluster.new(nodes)
+      redis.ping('Hello world')
+    end
   end
 
   def test_well_known_commands_work

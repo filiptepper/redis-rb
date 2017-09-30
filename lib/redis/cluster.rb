@@ -15,13 +15,13 @@ class Redis
 
       raise CannotConnectError, 'Could not connect to any nodes' if available_slots.nil?
 
-      available_node_urls = available_slots.keys.map { |ip_port| "redis://#{ip_port}" }
-      @available_nodes = build_clients_per_node(available_node_urls, options)
+      available_node_addrs = extract_available_node_addrs(available_slots)
+      @available_nodes = build_clients_per_node(available_node_addrs, options)
       @slot_node_key_maps = build_slot_node_key_maps(available_slots)
     end
 
-    def cluster(command, *args)
-      response = try_cmd(find_node, :cluster, command, *args)
+    def cluster(command, *args, &block)
+      response = try_cmd(find_node, :cluster, command, *args, &block)
       case command.to_s.downcase
       when 'slots' then cluster_slots(response)
       when 'nodes' then cluster_nodes(response)
@@ -112,7 +112,7 @@ class Redis
 
       startup_nodes.each do |node|
         begin
-          slot_info = fetch_slot_info(node)
+          slot_info = fetch_slot_info(node, ttl: 1)
         rescue CannotConnectError
           next
         end
@@ -123,12 +123,19 @@ class Redis
       slot_info
     end
 
-    def fetch_slot_info(node)
-      try_cmd(node, :cluster, :slots).map do |slot_info|
+    def fetch_slot_info(node, ttl: REQUEST_TTL)
+      try_cmd(node, :cluster, :slots, ttl: ttl).map do |slot_info|
         first_slot, last_slot = slot_info[0..1]
         ip, port = slot_info[2]
         ["#{ip}:#{port}", (first_slot..last_slot)]
       end.to_h
+    end
+
+    def extract_available_node_addrs(available_slots)
+      available_slots
+        .keys
+        .map { |k| k.split(':') }
+        .map { |k| { host: k[0], port: k[1] } }
     end
 
     def build_slot_node_key_maps(available_slots)
