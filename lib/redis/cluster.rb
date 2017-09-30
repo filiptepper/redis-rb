@@ -4,6 +4,7 @@ class Redis
   # Copyright (C) 2013 Salvatore Sanfilippo <antirez@gmail.com>
   # https://github.com/antirez/redis-rb-cluster
   class Cluster
+    KEYLESS_COMMANDS = %i[info multi exec slaveof config shutdown].freeze
     REQUEST_TTL = 16
     REQUEST_RETRY_SLEEP = 0.1
 
@@ -147,9 +148,9 @@ class Redis
 
     def extract_key(command, *args)
       command = command.to_s.downcase.to_sym
-      return '' if %i[info multi exec slaveof config shutdown].include?(command)
+      return '' if KEYLESS_COMMANDS.include?(command)
 
-      key = args[1].to_s
+      key = args.first.to_s
       hash_tag = extract_hash_tag(key)
       hash_tag.empty? ? key : hash_tag
     end
