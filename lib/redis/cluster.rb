@@ -42,10 +42,11 @@ class Redis
     end
 
     def method_missing(method_name, *args, &block)
-      key = extract_key(args)
-      slot = KeySlotConverter.convert(key)
+      key = extract_key(method_name, *args)
+      slot = key.empty? ? nil : KeySlotConverter.convert(key)
       node = find_node(slot)
       return try_cmd(node, method_name, *args, &block) if node.respond_to?(method_name)
+
       super
     end
 
@@ -144,8 +145,11 @@ class Redis
       end
     end
 
-    def extract_key(args)
-      key = args.first.to_s
+    def extract_key(command, *args)
+      command = command.to_s.downcase.to_sym
+      return '' if %i[info multi exec slaveof config shutdown].include?(command)
+
+      key = args[1].to_s
       hash_tag = extract_hash_tag(key)
       hash_tag.empty? ? key : hash_tag
     end

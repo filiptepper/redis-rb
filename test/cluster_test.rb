@@ -99,10 +99,8 @@ class TestCluster < Test::Unit::TestCase
   def test_client_works_even_if_so_many_dead_nodes_existed
     nodes = (6001..7005).map { |port| "redis://127.0.0.1:#{port}" }
 
-    assert_nothing_raised do
-      redis = Redis::Cluster.new(nodes)
-      redis.ping('Hello world')
-    end
+    redis = Redis::Cluster.new(nodes)
+    assert_equal 'PONG', redis.ping
   end
 
   def test_well_known_commands_work
