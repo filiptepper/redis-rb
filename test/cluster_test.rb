@@ -145,7 +145,7 @@ class TestCluster < Test::Unit::TestCase
   def test_client_does_not_accept_db_specified_url
     nodes = ['redis://127.0.0.1:7000/1/namespace']
 
-    assert_raise(Redis::CommandError, 'ERR SELECT is not allowed in cluster mode') do
+    assert_raise(Redis::CannotConnectError, 'Could not connect to any nodes') do
       Redis::Cluster.new(nodes)
     end
   end
