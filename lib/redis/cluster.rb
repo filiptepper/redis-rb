@@ -5,8 +5,8 @@ class Redis
   # https://github.com/antirez/redis-rb-cluster
   class Cluster
     KEYLESS_COMMANDS = %i[info multi exec slaveof config shutdown].freeze
-    REQUEST_TTL = 16
-    REQUEST_RETRY_SLEEP = 0.1
+    RETRY_COUNT = 16
+    RETRY_SLEEP_SEC = 0.1
 
     def initialize(node_configs, options = {})
       raise ArgumentError, 'Redis Cluster node config must be Array' unless node_configs.is_a?(Array)
@@ -59,12 +59,12 @@ class Redis
       @available_nodes.fetch(node_key)
     end
 
-    def try_cmd(node, command, *args, ttl: REQUEST_TTL, &block)
+    def try_cmd(node, command, *args, ttl: RETRY_COUNT, &block)
       ttl -= 1
       node.send(command, *args, &block)
     rescue TimeoutError, CannotConnectError, Errno::ECONNREFUSED, Errno::EACCES => err
       raise err if ttl <= 0
-      sleep(REQUEST_RETRY_SLEEP)
+      sleep(RETRY_SLEEP_SEC)
       node = find_node || node
       retry
     rescue CommandError => err
@@ -125,7 +125,7 @@ class Redis
       slot_info
     end
 
-    def fetch_slot_info(node, ttl: REQUEST_TTL)
+    def fetch_slot_info(node, ttl: RETRY_COUNT)
       try_cmd(node, :cluster, :slots, ttl: ttl).map do |slot_info|
         first_slot, last_slot = slot_info[0..1]
         ip, port = slot_info[2]
