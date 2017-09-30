@@ -114,7 +114,7 @@ class Redis
       startup_nodes.each do |node|
         begin
           slot_info = fetch_slot_info(node, ttl: 1)
-        rescue CannotConnectError
+        rescue CannotConnectError, CommandError
           next
         end
 
