@@ -1,13 +1,24 @@
 require_relative 'cluster/key_slot_converter'
 
 class Redis
+  # Redis Cluster client
+  #
+  # @see https://github.com/antirez/redis-rb-cluster POC implementation
+  # @see https://redis.io/topics/cluster-spec Redis Cluster specification
+  # @see https://redis.io/topics/cluster-tutorial Redis Cluster tutorial
+  #
   # Copyright (C) 2013 Salvatore Sanfilippo <antirez@gmail.com>
-  # https://github.com/antirez/redis-rb-cluster
   class Cluster
     KEYLESS_COMMANDS = %i[info multi exec slaveof config shutdown].freeze
     RETRY_COUNT = 16
-    RETRY_SLEEP_SEC = 0.1
+    RETRY_WAIT_SEC = 0.1
 
+    # Create a new client instance.
+    #
+    # @param [Array<String, Hash>] node_configs list of node addresses
+    #   to contact
+    # @param [Hash] options same as the `Redis` constractor
+    # @return [Redis::Cluster] a new client instance
     def initialize(node_configs, options = {})
       raise ArgumentError, 'Redis Cluster node config must be Array' unless node_configs.is_a?(Array)
 
@@ -21,6 +32,13 @@ class Redis
       @slot_node_key_maps = build_slot_node_key_maps(available_slots)
     end
 
+    # Sends `CLUSTER *` command to random node and returns its reply.
+    #
+    # @see https://redis.io/commands#cluster the cluster command references
+    #
+    # @param [String, Symbol] command the subcommand
+    #   e.g. `:slots`, `:nodes`, `:slaves`, `:info`
+    # @return depends on the subcommand
     def cluster(command, *args, &block)
       response = try_cmd(find_node, :cluster, command, *args, &block)
       case command.to_s.downcase
@@ -32,16 +50,30 @@ class Redis
       end
     end
 
+    # Sends `ASKING` command to random node and returns its reply.
+    #
+    # @see https://redis.io/topics/cluster-spec#ask-redirection ASK redirection
+    #
+    # @return [String] `OK`
     def asking
       try_cmd(find_node, :synchronize) { |client| client.call(%i[asking]) }
     end
 
     private
 
+    # Delegates to a instance of random node client and returns its reply.
+    #
+    # @param [String] method_name the method name
+    # @option [true, false] include_private true if private methods needed
+    # @return [true, false] depends on a instance of node client implementation
     def respond_to_missing?(method_name, include_private = false)
       find_node.respond_to?(method_name, include_private)
     end
 
+    # Delegates to a instance of random node client and returns its reply.
+    #
+    # @param [String, Symbol] method_name the method name e.g. `:set`, `:get`
+    # @return depends on the method name
     def method_missing(method_name, *args, &block)
       key = extract_key(method_name, *args)
       slot = key.empty? ? nil : KeySlotConverter.convert(key)
@@ -51,6 +83,12 @@ class Redis
       super
     end
 
+    # Finds and returns a instance of node client.
+    #
+    # @param [nil, Integer] slot the slot number
+    # @return [nil, Redis] a instance of node client related to the slot number,
+    #   or a instance of random node client if the slot number is nil,
+    #   or nil if client not cached slot information.
     def find_node(slot = nil)
       return nil unless instance_variable_defined?(:@available_nodes)
       return @available_nodes.values.sample if slot.nil? || !@slot_node_key_maps.key?(slot)
@@ -59,12 +97,21 @@ class Redis
       @available_nodes.fetch(node_key)
     end
 
+    # Sends the command and returns its reply. Redirections may occur.
+    #
+    # @see https://redis.io/topics/cluster-spec#redirection-and-resharding
+    #   Redirection and resharding
+    #
+    # @param [Redis] node a node client
+    # @param [String, Symbol] command the command
+    # @option [Integer] :ttl limit of count for retry or redirection
+    # @return depends on the command
     def try_cmd(node, command, *args, ttl: RETRY_COUNT, &block)
       ttl -= 1
       node.send(command, *args, &block)
     rescue TimeoutError, CannotConnectError, Errno::ECONNREFUSED, Errno::EACCES => err
       raise err if ttl <= 0
-      sleep(RETRY_SLEEP_SEC)
+      sleep(RETRY_WAIT_SEC)
       node = find_node || node
       retry
     rescue CommandError => err
@@ -79,12 +126,23 @@ class Redis
       end
     end
 
+    # Parse redirection error message
+    #   and returns a instance of destination node client.
+    #
+    # @param [String] err_msg the redirection error message
+    # @return [Redis] a instance of destination node client
     def redirection_node(err_msg)
       _, slot, node_key = err_msg.split(' ')
       @slot_node_key_maps[slot.to_i] = node_key
       find_node(slot.to_i)
     end
 
+    # Creates client instances per node.
+    #
+    # @param [Array<String, Hash>] node_configs list of node addresses
+    #   to contact
+    # @param [Hash] options same as the `Redis` constractor
+    # @return [Hash{String => Redis}] client instances per `'ip:port'`
     def build_clients_per_node(node_configs, options)
       node_configs.map do |config|
         option = to_client_option(config)
@@ -92,6 +150,12 @@ class Redis
       end.to_h
     end
 
+    # Converts node address into client options.
+    #
+    # @param [String, Hash] config the node config
+    #   e.g. `'redis://127.0.0.1:6379'`, `{ host: '127.0.0.1', port: 6379 }`
+    # @return [Hash{Symbol => String, Integer}] converted options
+    # @raise [Argumenterror] if config is not a `String` or `Hash`
     def to_client_option(config)
       if config.is_a?(String)
         { url: config }
@@ -103,12 +167,22 @@ class Redis
       end
     end
 
+    # Converts client option into key of node address.
+    #
+    # @param [Hash{Symbol => String, Integer}] option the client option
+    #   e.g. `{ url: 'redis://127.0.0.1:6379' }`,
+    #   `{ host: '127.0.0.1', port: 6379 }`
+    # @return [String] the node key of address e.g. `'127.0.0.1:6379'`
     def to_node_key(option)
       return option[:url].gsub(%r{rediss?://}, '') if option.key?(:url)
 
       "#{option[:host]}:#{option[:port]}"
     end
 
+    # Fetch cluster slot info on available node.
+    #
+    # @param [Array<Redis>] startup_nodes list of start-up node clients
+    # @return [Hash{String => Range}] slot ranges per key of node address
     def fetch_available_slots_per_node(startup_nodes)
       slot_info = nil
 
@@ -125,6 +199,11 @@ class Redis
       slot_info
     end
 
+    # Try fetch cluster slot info and converts it into slot range data per node.
+    #
+    # @param [Redis] node the instance of node client
+    # @option [Integer] :ttl limit of count for retry or redirection
+    # @return [Hash{String => Range}] slot ranges per key of node address
     def fetch_slot_info(node, ttl: RETRY_COUNT)
       try_cmd(node, :cluster, :slots, ttl: ttl).map do |slot_info|
         first_slot, last_slot = slot_info[0..1]
@@ -133,6 +212,10 @@ class Redis
       end.to_h
     end
 
+    # Extracts node addresses from slot info.
+    #
+    # @param [Hash{String => Range}] available_slots the cluster slot info
+    # @return [Array<Hash>] available node addresses
     def extract_available_node_addrs(available_slots)
       available_slots
         .keys
@@ -140,12 +223,23 @@ class Redis
         .map { |k| { host: k[0], port: k[1] } }
     end
 
+    # Creates cache of slot-node mapping.
+    #   e.g. `{ 12345 => '127.0.0.1:7000', 67890 => '127.0.0.1:7001' }`
+    #
+    # @param [Hash{String => Range}] available_slots the cluster slot info
+    # @return [Hash{Integer => String}] cache of slot-node mapping
     def build_slot_node_key_maps(available_slots)
       available_slots.each_with_object({}) do |(node_key, slots), m|
         slots.each { |slot| m[slot] = node_key }
       end
     end
 
+    # Extracts command key from arguments.
+    #
+    # @see https://redis.io/topics/cluster-spec#keys-hash-tags Keys hash tags
+    #
+    # @param [String] command the command
+    # @return [String] the key or blank or hash tag
     def extract_key(command, *args)
       command = command.to_s.downcase.to_sym
       return '' if KEYLESS_COMMANDS.include?(command)
@@ -155,6 +249,10 @@ class Redis
       hash_tag.empty? ? key : hash_tag
     end
 
+    # Extracts hash tag from key.
+    #
+    # @param [String] key the key
+    # @return [String] hash tag
     def extract_hash_tag(key)
       s = key.index('{')
       e = key.index('}', s.to_i + 1)
@@ -164,6 +262,10 @@ class Redis
       key[s + 1..e - 1]
     end
 
+    # Deserialize the node info.
+    #
+    # @param [String] str the node info string data
+    # @return [Hash{Symbol => String, Range, nil}] the node info
     def deserialize_node_info(str)
       arr = str.split(' ')
       {
@@ -179,6 +281,10 @@ class Redis
       }
     end
 
+    # Parse `CLUSTER SLOTS` command response raw data.
+    #
+    # @param [Array<Array>] response raw data
+    # @return [Array<Hash>] parsed data
     def cluster_slots(response)
       response.map do |res|
         first_slot, last_slot = res[0..1]
@@ -188,16 +294,28 @@ class Redis
       end
     end
 
+    # Parse `CLUSTER NODES` command response raw data.
+    #
+    # @param [String] response raw data
+    # @return [Array<Hash>] parsed data
     def cluster_nodes(response)
       response
         .split(/[\r\n]+/)
         .map { |str| deserialize_node_info(str) }
     end
 
+    # Parse `CLUSTER SLAVES` command response raw data.
+    #
+    # @param [Array<String>] response raw data
+    # @return [Array<Hash>] parsed data
     def cluster_slaves(response)
       response.map { |str| deserialize_node_info(str) }
     end
 
+    # Parse `CLUSTER INFO` command response raw data.
+    #
+    # @param [String] response raw data
+    # @return [Hash{Symbol => String}] parsed data
     def cluster_info(response)
       response
         .split(/[\r\n]+/)
