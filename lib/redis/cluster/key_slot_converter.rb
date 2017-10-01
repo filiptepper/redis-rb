@@ -1,7 +1,13 @@
 class Redis
   class Cluster
+    # Keys Slot Converter for Redis Cluster
+    #
+    # @see https://github.com/antirez/redis-rb-cluster
+    #   reference implementation in Ruby
+    # @see https://redis.io/topics/cluster-spec#appendix
+    #   reference implementation in ANSI C
+    #
     # Copyright (C) 2013 Salvatore Sanfilippo <antirez@gmail.com>
-    # https://github.com/antirez/redis-rb-cluster
     class KeySlotConverter
       XMODEM_CRC16_LOOKUP = [
         0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
@@ -40,6 +46,10 @@ class Redis
 
       HASH_SLOTS = 16_384
 
+      # Convert key into slot.
+      #
+      # @param [String] key a key
+      # @return [Integer] slot number
       def self.convert(key)
         crc = 0
         key.each_byte do |b|
