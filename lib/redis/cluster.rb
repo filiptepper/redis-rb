@@ -127,9 +127,11 @@ class Redis
     end
 
     # Parse redirection error message
-    #   and returns a instance of destination node client.
+    #   and returns a instance of destination node client
+    #   and updates slot-node mapping cache. (side effect!)
     #
     # @param [String] err_msg a redirection error message
+    #   e.g. 'MOVED 3999 127.0.0.1:6381'
     # @return [Redis] a instance of destination node client
     def redirection_node(err_msg)
       _, slot, node_key = err_msg.split(' ')
@@ -138,6 +140,18 @@ class Redis
     end
 
     # Creates client instances per node.
+    #
+    # @example When string included array specified
+    #   build_clients_per_node(['redis://127.0.0.1:6379'])
+    #     #=> { '127.0.0.1:6379' => Redis.new(url: 'redis://127.0.0.1:6379') }
+    #
+    # @example When hash included array specified
+    #   build_clients_per_node([{ host: '127.0.0.1', port: 6379 }])
+    #     #=> { '127.0.0.1:6379' => Redis.new(host: '127.0.0.1', port: 6379) }
+    #
+    # @example With options
+    #   build_clients_per_node(['redis://127.0.0.1:6379'], driver: :hiredis)
+    #     #=> { '127.0.0.1:6379' => Redis.new(url: 'redis://127.0.0.1:6379', driver: :hiredis) }
     #
     # @param [Array<String, Hash>] node_configs list of node addresses
     #   to contact
@@ -151,6 +165,14 @@ class Redis
     end
 
     # Converts node address into client options.
+    #
+    # @example When string value specified
+    #   to_client_option('redis://127.0.0.1:6379')
+    #     #=> { url: 'redis://127.0.0.1:6379' }
+    #
+    # @example When hash value specified
+    #   to_client_option(host: '127.0.0.1', port: 6379)
+    #     #=> { host: '127.0.0.1', port: 6379 }
     #
     # @param [String, Hash] config a node config
     #   e.g. `'redis://127.0.0.1:6379'`, `{ host: '127.0.0.1', port: 6379 }`
@@ -169,6 +191,14 @@ class Redis
 
     # Converts client option into key of node address.
     #
+    # @example When :url key included hash specified
+    #   to_node_key(url: 'redis://127.0.0.1:6379')
+    #     #=> '127.0.0.1:6379'
+    #
+    # @example When :url key included hash specified
+    #   to_node_key(host: '127.0.0.1', port: 6379)
+    #     #=> '127.0.0.1:6379'
+    #
     # @param [Hash{Symbol => String, Integer}] option a client option
     #   e.g. `{ url: 'redis://127.0.0.1:6379' }`,
     #   `{ host: '127.0.0.1', port: 6379 }`
@@ -180,6 +210,10 @@ class Redis
     end
 
     # Fetch cluster slot info on available node.
+    #
+    # @example
+    #   fetch_available_slots_per_node([Redis.new(url: 'redis://127.0.0.1:6379')])
+    #     #=> { '127.0.0.1:6379' => (0..12345) }
     #
     # @param [Array<Redis>] startup_nodes list of start-up node clients
     # @return [Hash{String => Range}] slot ranges per key of node address
@@ -201,6 +235,10 @@ class Redis
 
     # Try fetch cluster slot info and converts it into slot range data per node.
     #
+    # @example
+    #   fetch_slot_info(Redis.new(url: 'redis://127.0.0.1:6379'))
+    #     #=> { '127.0.0.1:6379' => (0..12345) }
+    #
     # @param [Redis] node a instance of node client
     # @option [Integer] :ttl limit of count for retry or redirection
     # @return [Hash{String => Range}] slot ranges per key of node address
@@ -214,6 +252,10 @@ class Redis
 
     # Extracts node addresses from slot info.
     #
+    # @example
+    #   extract_available_node_addrs('127.0.0.1:6379' => (0..12345))
+    #     #=> [{ host: '127.0.0.1', port: 6379 }]
+    #
     # @param [Hash{String => Range}] available_slots cluster slot info
     # @return [Array<Hash>] available node addresses
     def extract_available_node_addrs(available_slots)
@@ -224,7 +266,10 @@ class Redis
     end
 
     # Creates cache of slot-node mapping.
-    #   e.g. `{ 12345 => '127.0.0.1:7000', 67890 => '127.0.0.1:7001' }`
+    #
+    # @example
+    #   build_slot_node_key_maps('127.0.0.1:6379' => (0..2))
+    #     #=> { 0 => '127.0.0.1:6379', 1 => '127.0.0.1:6379', 2 => '127.0.0.1:6379' }
     #
     # @param [Hash{String => Range}] available_slots cluster slot info
     # @return [Hash{Integer => String}] cache of slot-node mapping
@@ -235,6 +280,18 @@ class Redis
     end
 
     # Extracts command key from arguments.
+    #
+    # @example When normal key specified
+    #   extract_key(:get, 'hogehoge')
+    #     #=> 'hogehoge'
+    #
+    # @example When hash tag included key specified
+    #   extract_key(:get, 'boo{foo}woo')
+    #     #=> 'foo'
+    #
+    # @example When key less command specified
+    #   extract_key(:info, 'fugafuga')
+    #     #=> ''
     #
     # @see https://redis.io/topics/cluster-spec#keys-hash-tags Keys hash tags
     #
@@ -251,6 +308,8 @@ class Redis
 
     # Extracts hash tag from key.
     #
+    # @see https://redis.io/topics/cluster-spec#keys-hash-tags Keys hash tags
+    #
     # @param [String] key a key
     # @return [String] hash tag
     def extract_hash_tag(key)
@@ -263,6 +322,18 @@ class Redis
     end
 
     # Deserialize a node info.
+    #
+    # @example
+    #   deserialize_node_info('07c37dfeb235213a872192d90877d0cd55635b91 127.0.0.1:6379 myself,master - 0 1426238317239 4 connected 0-12345')
+    #     #=> { node_id: '07c37dfeb235213a872192d90877d0cd55635b91',
+    #           ip_port: '127.0.0.1:6379',
+    #           flags: ['myself', 'master'],
+    #           master_node_id: '-',
+    #           ping_sent: '0',
+    #           pong_recv: '1426238317239',
+    #           config_epoch: '4',
+    #           link_state: 'connected',
+    #           slots: (0..12345) }
     #
     # @param [String] str a node info raw data
     # @return [Hash{Symbol => String, Range, nil}] a node info
@@ -283,6 +354,13 @@ class Redis
 
     # Parse `CLUSTER SLOTS` command response raw data.
     #
+    # @example
+    #   cluster_slots([0, 12345, ['127.0.0.1', 6379, '09dbe9720cda62f7865eabc5fd8857c5d2678366'], ['127.0.0.1', 6380, '821d8ca00d7ccf931ed3ffc7e3db0599d2271abf']])
+    #     #=> { start_slot: 0,
+    #           end_slot: 12345,
+    #           master: { ip: '127.0.0.1', port: 6379, node_id: '09dbe9720cda62f7865eabc5fd8857c5d2678366' },
+    #           replicas: [{ ip: '127.0.0.1', port: 6380, node_id: '821d8ca00d7ccf931ed3ffc7e3db0599d2271abf' }] }
+    #
     # @param [Array<Array>] response raw data
     # @return [Array<Hash>] parsed data
     def cluster_slots(response)
@@ -296,6 +374,18 @@ class Redis
 
     # Parse `CLUSTER NODES` command response raw data.
     #
+    # @example
+    #   cluster_nodes('07c37dfeb235213a872192d90877d0cd55635b91 127.0.0.1:6379 myself,master - 0 1426238317239 4 connected 0-12345')
+    #     #=> [{ node_id: '07c37dfeb235213a872192d90877d0cd55635b91',
+    #           ip_port: '127.0.0.1:6379',
+    #           flags: ['myself', 'master'],
+    #           master_node_id: '-',
+    #           ping_sent: '0',
+    #           pong_recv: '1426238317239',
+    #           config_epoch: '4',
+    #           link_state: 'connected',
+    #           slots: (0..12345) }]
+    #
     # @param [String] response raw data
     # @return [Array<Hash>] parsed data
     def cluster_nodes(response)
@@ -306,6 +396,18 @@ class Redis
 
     # Parse `CLUSTER SLAVES` command response raw data.
     #
+    # @example
+    #   cluster_slaves(['07c37dfeb235213a872192d90877d0cd55635b91 127.0.0.1:6379 myself,master - 0 1426238317239 4 connected 0-12345'])
+    #     #=> [{ node_id: '07c37dfeb235213a872192d90877d0cd55635b91',
+    #           ip_port: '127.0.0.1:6379',
+    #           flags: ['myself', 'master'],
+    #           master_node_id: '-',
+    #           ping_sent: '0',
+    #           pong_recv: '1426238317239',
+    #           config_epoch: '4',
+    #           link_state: 'connected',
+    #           slots: (0..12345) }]
+    #
     # @param [Array<String>] response raw data
     # @return [Array<Hash>] parsed data
     def cluster_slaves(response)
@@ -313,6 +415,10 @@ class Redis
     end
 
     # Parse `CLUSTER INFO` command response raw data.
+    #
+    # @example
+    #   cluster_info('cluster_state:ok\r\ncluster_size:3')
+    #     #=> { cluster_state: 'ok', cluster_size: '3' }
     #
     # @param [String] response raw data
     # @return [Hash{Symbol => String}] parsed data

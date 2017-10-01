@@ -1,11 +1,14 @@
 class Redis
   class Cluster
     # Key to slot converter for Redis Cluster
+    #   We can test it by `CLUSTER KEYSLOT` command.
     #
     # @see https://github.com/antirez/redis-rb-cluster
     #   reference implementation in Ruby
     # @see https://redis.io/topics/cluster-spec#appendix
     #   reference implementation in ANSI C
+    # @see https://redis.io/commands/cluster-keyslot
+    #   `CLUSTER KEYSLOT` command reference
     #
     # Copyright (C) 2013 Salvatore Sanfilippo <antirez@gmail.com>
     class KeySlotConverter
