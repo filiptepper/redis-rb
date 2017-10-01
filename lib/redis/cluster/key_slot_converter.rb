@@ -1,6 +1,6 @@
 class Redis
   class Cluster
-    # Keys Slot Converter for Redis Cluster
+    # Key to slot converter for Redis Cluster
     #
     # @see https://github.com/antirez/redis-rb-cluster
     #   reference implementation in Ruby
