@@ -110,14 +110,14 @@ class TestCluster < Test::Unit::TestCase
     assert_equal 'OK', redis.asking
   end
 
-  def test_client_works_even_if_so_many_dead_nodes_existed
+  def test_client_works_even_if_so_many_unavailable_nodes_specified
     nodes = (6001..7005).map { |port| "redis://127.0.0.1:#{port}" }
 
     redis = Redis::Cluster.new(nodes)
     assert_equal 'PONG', redis.ping
   end
 
-  def test_well_known_commands_work
+  def test_client_accepts_valid_node_configs
     nodes = ['redis://127.0.0.1:7000',
              'redis://127.0.0.1:7001',
              { host: '127.0.0.1', port: '7002' },
@@ -125,11 +125,46 @@ class TestCluster < Test::Unit::TestCase
              'redis://127.0.0.1:7004',
              'redis://127.0.0.1:7005']
 
+    assert_nothing_raised do
+      Redis::Cluster.new(nodes)
+    end
+  end
+
+  def test_well_known_commands_work
+    nodes = (7000..7005).map { |port| "redis://127.0.0.1:#{port}" }
+
     redis = Redis::Cluster.new(nodes)
 
     100.times { |i| redis.set(i.to_s, "hogehoge#{i}") }
     100.times { |i| assert_equal "hogehoge#{i}", redis.get(i.to_s) }
     assert_equal '1', redis.info['cluster_enabled']
+  end
+
+  def test_hash_tags_work_on_multi_key_commands
+    nodes = (7000..7005).map { |port| "redis://127.0.0.1:#{port}" }
+
+    redis = Redis::Cluster.new(nodes)
+
+    assert_raise(Redis::CommandError, "CROSSSLOT Keys in request don't hash to the same slot") do
+      redis.mset('Presidents.of.USA:1', 'George Washington',
+                 'Presidents.of.USA:2', 'John Adams',
+                 'Presidents.of.USA:3', 'Thomas Jefferson')
+    end
+
+    assert_raise(Redis::CommandError, "CROSSSLOT Keys in request don't hash to the same slot") do
+      redis.mget('Presidents.of.USA:1', 'Presidents.of.USA:2',
+                 'Presidents.of.USA:3')
+    end
+
+    assert_nothing_raised do
+      redis.mset('{Presidents.of.USA}:1', 'George Washington',
+                 '{Presidents.of.USA}:2', 'John Adams',
+                 '{Presidents.of.USA}:3', 'Thomas Jefferson')
+    end
+
+    assert_equal(['George Washington', 'John Adams', 'Thomas Jefferson'],
+                 redis.mget('{Presidents.of.USA}:1', '{Presidents.of.USA}:2',
+                            '{Presidents.of.USA}:3'))
   end
 
   def test_client_respond_to_commands
@@ -172,7 +207,7 @@ class TestCluster < Test::Unit::TestCase
     end
   end
 
-  def test_client_accept_unconnectable_node_url_included
+  def test_client_accepts_unconnectable_node_url_included
     nodes = ['redis://127.0.0.1:7000', 'redis://127.0.0.1:7006']
 
     assert_nothing_raised(Redis::CannotConnectError, 'Could not connect to any nodes') do
