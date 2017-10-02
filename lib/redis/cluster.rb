@@ -15,14 +15,25 @@ class Redis
 
     # Create a new client instance.
     #
-    # @param [Array<String, Hash>] node_configs list of node addresses
+    # @example How to use of simple
+    #   nodes = (7000..7005).map { |port| "redis://127.0.0.1:#{port}" }
+    #   redis = Redis::Cluster.new(nodes)
+    #   redis.set(:hogehoge, 1)
+    #
+    # @example How to use with options
+    #   nodes = (7000..7005).map { |port| "redis://127.0.0.1:#{port}" }
+    #   redis = Redis::Cluster.new(nodes, timeout: 1)
+    #   redis.set(:hogehoge, 1)
+    #
+    # @param node_addrs [Array<String, Hash>] the list of node addresses
     #   to contact
-    # @param [Hash] options same as the `Redis` constractor
+    # @param options [Hash] same as the `Redis` constractor
+    #
     # @return [Redis::Cluster] a new client instance
-    def initialize(node_configs, options = {})
-      raise ArgumentError, 'Redis Cluster node config must be Array' unless node_configs.is_a?(Array)
+    def initialize(node_addrs, options = {})
+      raise ArgumentError, 'Redis Cluster node config must be Array' unless node_addrs.is_a?(Array)
 
-      startup_nodes = build_clients_per_node(node_configs, options)
+      startup_nodes = build_clients_per_node(node_addrs, options)
       available_slots = fetch_available_slots_per_node(startup_nodes.values)
 
       raise CannotConnectError, 'Could not connect to any nodes' if available_slots.nil?
@@ -34,11 +45,12 @@ class Redis
 
     # Sends `CLUSTER *` command to random node and returns its reply.
     #
-    # @see https://redis.io/commands#cluster the cluster command references
+    # @see https://redis.io/commands#cluster Reference of cluster command
     #
-    # @param [String, Symbol] command the subcommand
+    # @param command [String, Symbol] the subcommand of cluster command
     #   e.g. `:slots`, `:nodes`, `:slaves`, `:info`
-    # @return depends on the subcommand
+    #
+    # @return [Object] depends on the subcommand
     def cluster(command, *args, &block)
       response = try_cmd(find_node, :cluster, command, *args, &block)
       case command.to_s.downcase
@@ -54,7 +66,7 @@ class Redis
     #
     # @see https://redis.io/topics/cluster-spec#ask-redirection ASK redirection
     #
-    # @return [String] `OK`
+    # @return [String] `'OK'`
     def asking
       try_cmd(find_node, :synchronize) { |client| client.call(%i[asking]) }
     end
@@ -63,8 +75,9 @@ class Redis
 
     # Delegates to a instance of random node client and returns its reply.
     #
-    # @param [String] method_name a method name
-    # @option [true, false] include_private true if private methods needed
+    # @param method_name [String] the method name
+    # @param include_private [true, false] specify true if private methods needed
+    #
     # @return [true, false] depends on implementation of the `Redis`
     def respond_to_missing?(method_name, include_private = false)
       find_node.respond_to?(method_name, include_private)
@@ -72,8 +85,9 @@ class Redis
 
     # Delegates to a instance of random node client and returns its reply.
     #
-    # @param [String, Symbol] method_name a method name e.g. `:set`, `:get`
-    # @return depends on implementation of the `Redis`
+    # @param method_name [String, Symbol] the method name e.g. `:set`, `:get`
+    #
+    # @return [Object] depends on implementation of the `Redis`
     def method_missing(method_name, *args, &block)
       key = extract_key(method_name, *args)
       slot = key.empty? ? nil : KeySlotConverter.convert(key)
@@ -85,10 +99,11 @@ class Redis
 
     # Finds and returns a instance of node client.
     #
-    # @param [nil, Integer] slot a slot number
-    # @return [nil, Redis] a instance of node client related to slot number,
-    #   or a instance of random node client if slot number is nil,
-    #   or nil if client not cached slot information.
+    # @param slot [nil, Integer] the slot number
+    #
+    # @return [Redis] a instance of node client related to the slot number
+    # @return [Redis] a instance of random node client if the slot number is nil
+    # @return [nil] nil if client not cached slot information
     def find_node(slot = nil)
       return nil unless instance_variable_defined?(:@available_nodes)
       return @available_nodes.values.sample if slot.nil? || !@slot_node_key_maps.key?(slot)
@@ -102,10 +117,11 @@ class Redis
     # @see https://redis.io/topics/cluster-spec#redirection-and-resharding
     #   Redirection and resharding
     #
-    # @param [Redis] node a node client
-    # @param [String, Symbol] command the command
-    # @option [Integer] :ttl limit of count for retry or redirection
-    # @return depends on the command
+    # @param node [Redis] the instance of node client
+    # @param command [String, Symbol] the command of redis
+    # @param ttl [Integer] the limit of count for retry or redirection
+    #
+    # @return [Object] depends on the command
     def try_cmd(node, command, *args, ttl: RETRY_COUNT, &block)
       ttl -= 1
       node.send(command, *args, &block)
@@ -126,12 +142,13 @@ class Redis
       end
     end
 
-    # Parse redirection error message
-    #   and returns a instance of destination node client
-    #   and updates slot-node mapping cache. (side effect!)
+    # Parse redirection error message,
+    #   and returns a instance of destination node client,
+    #   and updates slot-node mapping cache (side effect!).
     #
-    # @param [String] err_msg a redirection error message
-    #   e.g. 'MOVED 3999 127.0.0.1:6381'
+    # @param err_msg [String] the message of MOVED redirection error
+    #   e.g. `'MOVED 3999 127.0.0.1:6381'`
+    #
     # @return [Redis] a instance of destination node client
     def redirection_node(err_msg)
       _, slot, node_key = err_msg.split(' ')
@@ -143,23 +160,24 @@ class Redis
     #
     # @example When string included array specified
     #   build_clients_per_node(['redis://127.0.0.1:6379'])
-    #     #=> { '127.0.0.1:6379' => Redis.new(url: 'redis://127.0.0.1:6379') }
+    #   #=> { '127.0.0.1:6379' => Redis.new(url: 'redis://127.0.0.1:6379') }
     #
     # @example When hash included array specified
     #   build_clients_per_node([{ host: '127.0.0.1', port: 6379 }])
-    #     #=> { '127.0.0.1:6379' => Redis.new(host: '127.0.0.1', port: 6379) }
+    #   #=> { '127.0.0.1:6379' => Redis.new(host: '127.0.0.1', port: 6379) }
     #
     # @example With options
     #   build_clients_per_node(['redis://127.0.0.1:6379'], driver: :hiredis)
-    #     #=> { '127.0.0.1:6379' => Redis.new(url: 'redis://127.0.0.1:6379', driver: :hiredis) }
+    #   #=> { '127.0.0.1:6379' => Redis.new(url: 'redis://127.0.0.1:6379', driver: :hiredis) }
     #
-    # @param [Array<String, Hash>] node_configs list of node addresses
+    # @param node_addrs [Array<String, Hash>] the list of node addresses
     #   to contact
-    # @param [Hash] options same as the `Redis` constractor
+    # @param options [Hash] same as the `Redis` constractor
+    #
     # @return [Hash{String => Redis}] client instances per `'ip:port'`
-    def build_clients_per_node(node_configs, options)
-      node_configs.map do |config|
-        option = to_client_option(config)
+    def build_clients_per_node(node_addrs, options)
+      node_addrs.map do |addr|
+        option = to_client_option(addr)
         [to_node_key(option), Redis.new(options.merge(option))]
       end.to_h
     end
@@ -168,24 +186,26 @@ class Redis
     #
     # @example When string value specified
     #   to_client_option('redis://127.0.0.1:6379')
-    #     #=> { url: 'redis://127.0.0.1:6379' }
+    #   #=> { url: 'redis://127.0.0.1:6379' }
     #
     # @example When hash value specified
     #   to_client_option(host: '127.0.0.1', port: 6379)
-    #     #=> { host: '127.0.0.1', port: 6379 }
+    #   #=> { host: '127.0.0.1', port: 6379 }
     #
-    # @param [String, Hash] config a node config
+    # @param addr [String, Hash] the node address
     #   e.g. `'redis://127.0.0.1:6379'`, `{ host: '127.0.0.1', port: 6379 }`
+    #
     # @return [Hash{Symbol => String, Integer}] converted options
-    # @raise [ArgumentError] if config is not a `String` or `Hash`
-    def to_client_option(config)
-      if config.is_a?(String)
-        { url: config }
-      elsif config.is_a?(Hash)
-        config = config.map { |k, v| [k.to_sym, v] }.to_h
-        { host: config.fetch(:host), port: config.fetch(:port) }
+    #
+    # @raise [ArgumentError] if addr is not a `String` or `Hash`
+    def to_client_option(addr)
+      if addr.is_a?(String)
+        { url: addr }
+      elsif addr.is_a?(Hash)
+        addr = addr.map { |k, v| [k.to_sym, v] }.to_h
+        { host: addr.fetch(:host), port: addr.fetch(:port) }
       else
-        raise ArgumentError, 'Redis Cluster node config must includes String or Hash'
+        raise ArgumentError, 'Redis Cluster node addr must includes String or Hash'
       end
     end
 
@@ -193,15 +213,16 @@ class Redis
     #
     # @example When :url key included hash specified
     #   to_node_key(url: 'redis://127.0.0.1:6379')
-    #     #=> '127.0.0.1:6379'
+    #   #=> '127.0.0.1:6379'
     #
     # @example When :url key included hash specified
     #   to_node_key(host: '127.0.0.1', port: 6379)
-    #     #=> '127.0.0.1:6379'
+    #   #=> '127.0.0.1:6379'
     #
-    # @param [Hash{Symbol => String, Integer}] option a client option
+    # @param option [Hash{Symbol => String, Integer}] the client option
     #   e.g. `{ url: 'redis://127.0.0.1:6379' }`,
     #   `{ host: '127.0.0.1', port: 6379 }`
+    #
     # @return [String] a node key of address e.g. `'127.0.0.1:6379'`
     def to_node_key(option)
       return option[:url].gsub(%r{rediss?://}, '') if option.key?(:url)
@@ -211,11 +232,12 @@ class Redis
 
     # Fetch cluster slot info on available node.
     #
-    # @example
+    # @example Basic example
     #   fetch_available_slots_per_node([Redis.new(url: 'redis://127.0.0.1:6379')])
-    #     #=> { '127.0.0.1:6379' => (0..12345) }
+    #   #=> { '127.0.0.1:6379' => (0..12345) }
     #
-    # @param [Array<Redis>] startup_nodes list of start-up node clients
+    # @param startup_nodes [Array<Redis>] the list of start-up node clients
+    #
     # @return [Hash{String => Range}] slot ranges per key of node address
     def fetch_available_slots_per_node(startup_nodes)
       slot_info = nil
@@ -235,12 +257,13 @@ class Redis
 
     # Try fetch cluster slot info and converts it into slot range data per node.
     #
-    # @example
+    # @example Basic example
     #   fetch_slot_info(Redis.new(url: 'redis://127.0.0.1:6379'))
-    #     #=> { '127.0.0.1:6379' => (0..12345) }
+    #   #=> { '127.0.0.1:6379' => (0..12345) }
     #
-    # @param [Redis] node a instance of node client
-    # @option [Integer] :ttl limit of count for retry or redirection
+    # @param node [Redis] the instance of node client
+    # @param [Integer] ttl the limit of count for retry or redirection
+    #
     # @return [Hash{String => Range}] slot ranges per key of node address
     def fetch_slot_info(node, ttl: RETRY_COUNT)
       try_cmd(node, :cluster, :slots, ttl: ttl).map do |slot_info|
@@ -252,11 +275,12 @@ class Redis
 
     # Extracts node addresses from slot info.
     #
-    # @example
+    # @example Basic example
     #   extract_available_node_addrs('127.0.0.1:6379' => (0..12345))
-    #     #=> [{ host: '127.0.0.1', port: 6379 }]
+    #   #=> [{ host: '127.0.0.1', port: 6379 }]
     #
-    # @param [Hash{String => Range}] available_slots cluster slot info
+    # @param available_slots [Hash{String => Range}] the cluster slot info
+    #
     # @return [Array<Hash>] available node addresses
     def extract_available_node_addrs(available_slots)
       available_slots
@@ -267,11 +291,12 @@ class Redis
 
     # Creates cache of slot-node mapping.
     #
-    # @example
+    # @example Basic example
     #   build_slot_node_key_maps('127.0.0.1:6379' => (0..2))
-    #     #=> { 0 => '127.0.0.1:6379', 1 => '127.0.0.1:6379', 2 => '127.0.0.1:6379' }
+    #   #=> { 0 => '127.0.0.1:6379', 1 => '127.0.0.1:6379', 2 => '127.0.0.1:6379' }
     #
-    # @param [Hash{String => Range}] available_slots cluster slot info
+    # @param available_slots [Hash{String => Range}] the cluster slot info
+    #
     # @return [Hash{Integer => String}] cache of slot-node mapping
     def build_slot_node_key_maps(available_slots)
       available_slots.each_with_object({}) do |(node_key, slots), m|
@@ -283,20 +308,23 @@ class Redis
     #
     # @example When normal key specified
     #   extract_key(:get, 'hogehoge')
-    #     #=> 'hogehoge'
+    #   #=> 'hogehoge'
     #
     # @example When hash tag included key specified
     #   extract_key(:get, 'boo{foo}woo')
-    #     #=> 'foo'
+    #   #=> 'foo'
     #
     # @example When key less command specified
     #   extract_key(:info, 'fugafuga')
-    #     #=> ''
+    #   #=> ''
     #
     # @see https://redis.io/topics/cluster-spec#keys-hash-tags Keys hash tags
     #
-    # @param [String] command the command
-    # @return [String] a key or blank or hash tag
+    # @param command [String] the command of the redis
+    #
+    # @return [String] a key of the redis command
+    # @return [String] a blank if keyless command specified
+    # @return [String] a hash tag if hash tag specified
     def extract_key(command, *args)
       command = command.to_s.downcase.to_sym
       return '' if KEYLESS_COMMANDS.include?(command)
@@ -310,8 +338,9 @@ class Redis
     #
     # @see https://redis.io/topics/cluster-spec#keys-hash-tags Keys hash tags
     #
-    # @param [String] key a key
-    # @return [String] hash tag
+    # @param key [String] the key of the redis command
+    #
+    # @return [String] hash tag or blank
     def extract_hash_tag(key)
       s = key.index('{')
       e = key.index('}', s.to_i + 1)
@@ -323,19 +352,20 @@ class Redis
 
     # Deserialize a node info.
     #
-    # @example
+    # @example Basic example
     #   deserialize_node_info('07c37dfeb235213a872192d90877d0cd55635b91 127.0.0.1:6379 myself,master - 0 1426238317239 4 connected 0-12345')
-    #     #=> { node_id: '07c37dfeb235213a872192d90877d0cd55635b91',
-    #           ip_port: '127.0.0.1:6379',
-    #           flags: ['myself', 'master'],
-    #           master_node_id: '-',
-    #           ping_sent: '0',
-    #           pong_recv: '1426238317239',
-    #           config_epoch: '4',
-    #           link_state: 'connected',
-    #           slots: (0..12345) }
+    #   #=> { node_id: '07c37dfeb235213a872192d90877d0cd55635b91',
+    #         ip_port: '127.0.0.1:6379',
+    #         flags: ['myself', 'master'],
+    #         master_node_id: '-',
+    #         ping_sent: '0',
+    #         pong_recv: '1426238317239',
+    #         config_epoch: '4',
+    #         link_state: 'connected',
+    #         slots: (0..12345) }
     #
-    # @param [String] str a node info raw data
+    # @param str [String] the raw data of node info
+    #
     # @return [Hash{Symbol => String, Range, nil}] a node info
     def deserialize_node_info(str)
       arr = str.split(' ')
@@ -354,14 +384,15 @@ class Redis
 
     # Parse `CLUSTER SLOTS` command response raw data.
     #
-    # @example
+    # @example Basic example
     #   cluster_slots([0, 12345, ['127.0.0.1', 6379, '09dbe9720cda62f7865eabc5fd8857c5d2678366'], ['127.0.0.1', 6380, '821d8ca00d7ccf931ed3ffc7e3db0599d2271abf']])
-    #     #=> { start_slot: 0,
-    #           end_slot: 12345,
-    #           master: { ip: '127.0.0.1', port: 6379, node_id: '09dbe9720cda62f7865eabc5fd8857c5d2678366' },
-    #           replicas: [{ ip: '127.0.0.1', port: 6380, node_id: '821d8ca00d7ccf931ed3ffc7e3db0599d2271abf' }] }
+    #   #=> { start_slot: 0,
+    #         end_slot: 12345,
+    #         master: { ip: '127.0.0.1', port: 6379, node_id: '09dbe9720cda62f7865eabc5fd8857c5d2678366' },
+    #         replicas: [{ ip: '127.0.0.1', port: 6380, node_id: '821d8ca00d7ccf931ed3ffc7e3db0599d2271abf' }] }
     #
-    # @param [Array<Array>] response raw data
+    # @param response [Array<Array>] the raw data of slots info
+    #
     # @return [Array<Hash>] parsed data
     def cluster_slots(response)
       response.map do |res|
@@ -374,19 +405,20 @@ class Redis
 
     # Parse `CLUSTER NODES` command response raw data.
     #
-    # @example
+    # @example Basic example
     #   cluster_nodes('07c37dfeb235213a872192d90877d0cd55635b91 127.0.0.1:6379 myself,master - 0 1426238317239 4 connected 0-12345')
-    #     #=> [{ node_id: '07c37dfeb235213a872192d90877d0cd55635b91',
-    #           ip_port: '127.0.0.1:6379',
-    #           flags: ['myself', 'master'],
-    #           master_node_id: '-',
-    #           ping_sent: '0',
-    #           pong_recv: '1426238317239',
-    #           config_epoch: '4',
-    #           link_state: 'connected',
-    #           slots: (0..12345) }]
+    #   #=> [{ node_id: '07c37dfeb235213a872192d90877d0cd55635b91',
+    #          ip_port: '127.0.0.1:6379',
+    #          flags: ['myself', 'master'],
+    #          master_node_id: '-',
+    #          ping_sent: '0',
+    #          pong_recv: '1426238317239',
+    #          config_epoch: '4',
+    #          link_state: 'connected',
+    #          slots: (0..12345) }]
     #
-    # @param [String] response raw data
+    # @param response [String] the raw data of nodes info
+    #
     # @return [Array<Hash>] parsed data
     def cluster_nodes(response)
       response
@@ -396,19 +428,20 @@ class Redis
 
     # Parse `CLUSTER SLAVES` command response raw data.
     #
-    # @example
+    # @example Basic example
     #   cluster_slaves(['07c37dfeb235213a872192d90877d0cd55635b91 127.0.0.1:6379 myself,master - 0 1426238317239 4 connected 0-12345'])
-    #     #=> [{ node_id: '07c37dfeb235213a872192d90877d0cd55635b91',
-    #           ip_port: '127.0.0.1:6379',
-    #           flags: ['myself', 'master'],
-    #           master_node_id: '-',
-    #           ping_sent: '0',
-    #           pong_recv: '1426238317239',
-    #           config_epoch: '4',
-    #           link_state: 'connected',
-    #           slots: (0..12345) }]
+    #   #=> [{ node_id: '07c37dfeb235213a872192d90877d0cd55635b91',
+    #          ip_port: '127.0.0.1:6379',
+    #          flags: ['myself', 'master'],
+    #          master_node_id: '-',
+    #          ping_sent: '0',
+    #          pong_recv: '1426238317239',
+    #          config_epoch: '4',
+    #          link_state: 'connected',
+    #          slots: (0..12345) }]
     #
-    # @param [Array<String>] response raw data
+    # @param response [Array<String>] the raw data of slaves info
+    #
     # @return [Array<Hash>] parsed data
     def cluster_slaves(response)
       response.map { |str| deserialize_node_info(str) }
@@ -416,11 +449,12 @@ class Redis
 
     # Parse `CLUSTER INFO` command response raw data.
     #
-    # @example
+    # @example Basic example
     #   cluster_info('cluster_state:ok\r\ncluster_size:3')
-    #     #=> { cluster_state: 'ok', cluster_size: '3' }
+    #   #=> { cluster_state: 'ok', cluster_size: '3' }
     #
-    # @param [String] response raw data
+    # @param response [String] the raw data of cluster info
+    #
     # @return [Hash{Symbol => String}] parsed data
     def cluster_info(response)
       response
