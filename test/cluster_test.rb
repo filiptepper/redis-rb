@@ -191,11 +191,29 @@ class TestCluster < Test::Unit::TestCase
     end
   end
 
+  def test_client_accepts_valid_options
+    nodes = (7000..7005).map { |port| "redis://127.0.0.1:#{port}" }
+
+    assert_nothing_raised do
+      Redis::Cluster.new(nodes, timeout: 1.0)
+    end
+  end
+
+  def test_client_ignores_invalid_options
+    nodes = (7000..7005).map { |port| "redis://127.0.0.1:#{port}" }
+
+    assert_nothing_raised do
+      Redis::Cluster.new(nodes, invalid_option: true)
+    end
+  end
+
   def test_client_does_not_accept_db_specified_url
-    nodes = ['redis://127.0.0.1:7000/1/namespace']
+    assert_raise(Redis::CannotConnectError, 'Could not connect to any nodes') do
+      Redis::Cluster.new(['redis://127.0.0.1:7000/1/namespace'])
+    end
 
     assert_raise(Redis::CannotConnectError, 'Could not connect to any nodes') do
-      Redis::Cluster.new(nodes)
+      Redis::Cluster.new([{ host: '127.0.0.1', port: '7000' }], db: 1)
     end
   end
 
