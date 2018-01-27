@@ -1,8 +1,13 @@
-# (unreleased)
+# 4.0.1
 
 * `Redis::Distributed` now supports `mget` and `mapped_mget`. See #687.
 
 * `Redis::Distributed` now supports `sscan` and `sscan_each`. See #572.
+
+* `Redis#connection` returns a hash with connection information.
+  You shouldn't need to call `Redis#_client`, ever.
+
+* `Redis#flushdb` and `Redis#flushall` now support the `:async` option. See #706.
 
 
 # 4.0
