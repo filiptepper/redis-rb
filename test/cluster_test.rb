@@ -167,6 +167,73 @@ class TestCluster < Test::Unit::TestCase
                             '{Presidents.of.USA}:3'))
   end
 
+  def test_pipelining_with_a_hash_tag
+    nodes = (7000..7005).map { |port| "redis://127.0.0.1:#{port}" }
+    redis = Redis::Cluster.new(nodes)
+
+    p1 = p2 = p3 = p4 = p5 = p6 = nil
+
+    redis.pipelined do |r|
+      r.set('{Presidents.of.USA}:1', 'George Washington')
+      r.set('{Presidents.of.USA}:2', 'John Adams')
+      r.set('{Presidents.of.USA}:3', 'Thomas Jefferson')
+      r.set('{Presidents.of.USA}:4', 'James Madison')
+      r.set('{Presidents.of.USA}:5', 'James Monroe')
+      r.set('{Presidents.of.USA}:6', 'John Quincy Adams')
+
+      p1 = r.get('{Presidents.of.USA}:1')
+      p2 = r.get('{Presidents.of.USA}:2')
+      p3 = r.get('{Presidents.of.USA}:3')
+      p4 = r.get('{Presidents.of.USA}:4')
+      p5 = r.get('{Presidents.of.USA}:5')
+      p6 = r.get('{Presidents.of.USA}:6')
+    end
+
+    [p1, p2, p3, p4, p5, p6].each do |actual|
+      assert_true actual.is_a?(Redis::Future)
+    end
+
+    assert_equal('George Washington', p1.value)
+    assert_equal('John Adams',        p2.value)
+    assert_equal('Thomas Jefferson',  p3.value)
+    assert_equal('James Madison',     p4.value)
+    assert_equal('James Monroe',      p5.value)
+    assert_equal('John Quincy Adams', p6.value)
+  end
+
+  def test_pipelining_without_hash_tags
+    nodes = (7000..7005).map { |port| "redis://127.0.0.1:#{port}" }
+    redis = Redis::Cluster.new(nodes)
+
+    a = b = c = d = e = f = nil
+
+    redis.pipelined do
+      redis.set(:a, 1)
+      redis.set(:b, 2)
+      redis.set(:c, 3)
+      redis.set(:d, 4)
+      redis.set(:e, 5)
+      redis.set(:f, 6)
+
+      a = redis.get(:a)
+      b = redis.get(:b)
+      c = redis.get(:c)
+      d = redis.get(:d)
+      e = redis.get(:e)
+      f = redis.get(:f)
+    end
+
+    [a, b, c, d, e, f].each_with_index do |actual, i|
+      expected = (i + 1).to_s
+
+      if actual.is_a?(Redis::Future)
+        assert_equal(expected, actual.value)
+      else
+        assert_equal(expected, actual)
+      end
+    end
+  end
+
   def test_client_respond_to_commands
     nodes = (7000..7005).map { |port| "redis://127.0.0.1:#{port}" }
 
