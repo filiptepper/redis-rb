@@ -155,7 +155,7 @@ class Redis
         ttl = last.delete(:ttl)
 
         # drop last to avoid confusing Redis with empty Hash
-        args.pop if last&.empty?
+        args.pop if !last.nil? && last.empty?
       end
 
       ttl
