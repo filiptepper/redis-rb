@@ -119,11 +119,15 @@ class Redis
     #
     # @param node [Redis] the instance of node client
     # @param command [String, Symbol] the command of redis
-    # @param ttl [Integer] the limit of count for retry or redirection
+    # @param args [Object] command arguments
+    #                      if last argument is a Hash, and it has :ttl key
+    #                      then :tll is the limit of count for retry or redirection
     #
     # @return [Object] depends on the command
-    def try_cmd(node, command, *args, ttl: RETRY_COUNT, &block)
+    def try_cmd(node, command, *args, &block)
+      ttl = get_ttl(*args) || RETRY_COUNT
       ttl -= 1
+
       node.send(command, *args, &block)
     rescue TimeoutError, CannotConnectError, Errno::ECONNREFUSED, Errno::EACCES => err
       raise err if ttl <= 0
@@ -140,6 +144,21 @@ class Redis
       else
         raise err
       end
+    end
+
+    def get_ttl(*args)
+      ttl = nil
+
+      last = args.last
+
+      if last.is_a?(Hash)
+        ttl = last.delete(:ttl)
+
+        # drop last to avoid confusing Redis with empty Hash
+        args.pop if last&.empty?
+      end
+
+      ttl
     end
 
     # Parse redirection error message,
